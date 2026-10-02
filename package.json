@@ -1,7 +1,8 @@
 {
   "name": "claude-codex-bridge",
-  "version": "0.3.1",
-  "description": "Bidirectional MCP server bridge between Claude Code and Codex CLI",
+  "version": "0.4.0-personal.1",
+  "private": true,
+  "description": "Personal Codex and Claude bridge with automatic context and persistent agent tasks",
   "keywords": [
     "ai",
     "bridge",
@@ -9,15 +10,15 @@
     "codex",
     "mcp"
   ],
-  "homepage": "https://github.com/Dunqing/claude-codex-bridge#readme",
+  "homepage": "https://github.com/2937015922/claude-codex-bridge#readme",
   "bugs": {
-    "url": "https://github.com/Dunqing/claude-codex-bridge/issues"
+    "url": "https://github.com/2937015922/claude-codex-bridge/issues"
   },
   "license": "MIT",
   "author": "Dunqing <dengqing0821@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Dunqing/claude-codex-bridge.git"
+    "url": "git+https://github.com/2937015922/claude-codex-bridge.git"
   },
   "funding": {
     "type": "github",
@@ -26,12 +27,22 @@
   "bin": {
     "ccb-claude": "./dist/claude-server.mjs",
     "ccb-codex": "./dist/codex-server.mjs",
+    "ccb-personal": "./dist/personal-server.mjs",
+    "ccb-personal-control": "./dist/personal-control.mjs",
     "claude-codex-bridge": "./dist/cli.mjs"
   },
   "files": [
     "dist",
     "agents",
-    "skills"
+    "skills",
+    "legacy-skills",
+    "hooks",
+    ".codex-plugin",
+    ".mcp.json",
+    "mcp.json",
+    "plugin.json",
+    "PERSONAL.md",
+    "scripts"
   ],
   "type": "module",
   "scripts": {
@@ -39,8 +50,11 @@
     "dev:codex-server": "tsx src/codex-server.ts",
     "dev:claude-server": "tsx src/claude-server.ts",
     "test": "vitest run",
+    "pretest": "npm run build",
     "test:watch": "vitest",
-    "lint": "oxlint --type-check",
+    "typecheck": "tsc --noEmit",
+    "validate:personal": "node scripts/validate-personal.mjs",
+    "lint": "oxlint",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check src/ test/",
     "publint": "publint",
@@ -67,7 +81,7 @@
     "vitest": "^4.0.18"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "packageManager": "pnpm@10.29.2"
 }

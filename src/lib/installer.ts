@@ -88,7 +88,7 @@ export async function installClaudeSkill(scope: InstallScope): Promise<void> {
       ? join(homedir(), ".claude", "skills", "codex")
       : join(process.cwd(), ".claude", "skills", "codex");
 
-  const content = await readTemplate("skills/codex/SKILL.md");
+  const content = await readTemplate("legacy-skills/codex/SKILL.md");
   await installFile(base, "SKILL.md", content);
 }
 
@@ -112,7 +112,7 @@ export async function installCodexSkill(scope: InstallScope): Promise<void> {
       ? join(homedir(), ".agents", "skills", "claude")
       : join(process.cwd(), ".agents", "skills", "claude");
 
-  const content = await readTemplate("skills/claude/SKILL.md");
+  const content = await readTemplate("legacy-skills/claude/SKILL.md");
   await installFile(base, "SKILL.md", content);
 }
 

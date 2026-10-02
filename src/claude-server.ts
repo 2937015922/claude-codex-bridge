@@ -8,8 +8,11 @@ import { buildExplainCodePrompt, buildPlanPerfPrompt } from "./lib/prompt-builde
 import { createProgressReporter, logger, type ProgressReporter } from "./lib/logger.js";
 import { CLAUDE_MODELS } from "./lib/types.js";
 import type { ClaudeResult } from "./lib/types.js";
+import { randomUUID } from "node:crypto";
+import { ClaudeCliProvider } from "./personal/claude-provider.js";
+import { discoverClaudeExecutable } from "./personal/claude-process.js";
 
-let lastSessionId: string | null = null;
+const readOnlyProvider = new ClaudeCliProvider();
 
 const server = new McpServer({ name: "claude-bridge", version: "0.1.0" });
 
@@ -24,57 +27,65 @@ async function runClaude(
     model?: string;
     maxTurns?: number;
     allowedTools?: string[];
-    sessionId?: string;
+    implement?: boolean;
     progress?: ProgressReporter;
   } = {},
 ): Promise<ClaudeResult> {
-  const args = ["-p", "--output-format", "json"];
-  if (options.sessionId) args.push("--resume", options.sessionId);
-  if (options.model) args.push("--model", options.model);
-  if (options.maxTurns) args.push("--max-turns", String(options.maxTurns));
-  if (options.allowedTools && options.allowedTools.length > 0) {
-    for (const tool of options.allowedTools) {
-      args.push("--allowedTools", tool);
-    }
-  }
-  args.push(prompt);
-
   options.progress?.report("Starting claude...");
-
-  // Buffer for partial stderr lines split across chunks.
-  let stderrBuf = "";
+  if (!options.implement) {
+    const tools = options.allowedTools ?? ["Read", "Grep", "Glob"];
+    if (tools.some((tool) => !["Read", "Grep", "Glob"].includes(tool))) {
+      return {
+        resultText: "",
+        sessionId: null,
+        costUsd: null,
+        errors: [
+          "Analysis tools are restricted to Read, Grep and Glob; use the explicitly authorized implementation tool for edits.",
+        ],
+      };
+    }
+    const result = await readOnlyProvider.run(
+      {
+        sessionId: randomUUID(),
+        resume: false,
+        prompt,
+        workingDirectory: options.workingDirectory || process.cwd(),
+        model: options.model || "opus",
+        maxTurns: options.maxTurns || 10,
+        profile: tools.length ? "review" : "discussion",
+        reviewTools: tools,
+        signal: new AbortController().signal,
+      },
+      (type) => {
+        if (type === "provider_init") options.progress?.report("Claude connected.");
+      },
+    );
+    return {
+      resultText: result.text,
+      sessionId: result.sessionId,
+      costUsd: result.costUsd ?? null,
+      errors: result.error ? [result.error] : [],
+    };
+  }
 
   const result = await execCommand({
-    command: "claude",
-    args,
+    command: await discoverClaudeExecutable(),
+    args: [
+      "-p",
+      "--output-format",
+      "json",
+      "--no-session-persistence",
+      "--permission-mode",
+      "acceptEdits",
+      "--model",
+      options.model || "opus",
+      "--max-turns",
+      String(options.maxTurns || 15),
+    ],
     cwd: options.workingDirectory,
-    onStdout: (chunk) => {
-      logger.info(`[claude] ${chunk.toString().replace(/\n$/, "")}`);
-    },
-    onStderr: (chunk) => {
-      const text = chunk.toString();
-      logger.warn(`[claude:stderr] ${text.replace(/\n$/, "")}`);
-
-      // Forward complete stderr lines as inline progress.
-      if (options.progress) {
-        stderrBuf += text;
-        const lines = stderrBuf.split(/\r?\n|\r/);
-        stderrBuf = lines.pop()!;
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed) {
-            options.progress.report(trimmed);
-          }
-        }
-      }
-    },
+    input: prompt,
+    maxRetries: 0,
   });
-
-  // Flush any remaining buffered stderr fragment.
-  if (options.progress && stderrBuf.trim()) {
-    options.progress.report(stderrBuf.trim());
-  }
-
   if (result.timedOut) {
     return {
       resultText: "",
@@ -87,25 +98,12 @@ async function runClaude(
   options.progress?.report("Parsing response...");
   const parsed = parseClaudeOutput(result.stdout);
 
-  if (parsed.sessionId) {
-    lastSessionId = parsed.sessionId;
-    logger.debug(`Stored sessionId for session continuity: ${parsed.sessionId}`);
+  if (result.exitCode !== 0) {
+    parsed.resultText = "";
+    parsed.errors.push(
+      "Claude exited unsuccessfully. Check the existing CLI login and permissions; the request was not retried.",
+    );
   }
-
-  // Check stderr for API key issues
-  if (result.exitCode !== 0 && !parsed.resultText) {
-    const stderr = result.stderr.toLowerCase();
-    if (
-      stderr.includes("api key") ||
-      stderr.includes("authentication") ||
-      stderr.includes("unauthorized")
-    ) {
-      parsed.errors.push("Claude API key issue. Ensure ANTHROPIC_API_KEY is set.");
-    } else if (result.stderr.trim()) {
-      parsed.errors.push(result.stderr.trim());
-    }
-  }
-
   return parsed;
 }
 
@@ -132,14 +130,7 @@ function formatClaudeResponse(parsed: ClaudeResult): {
 }
 
 // Read-only tool set for review/analysis tasks
-const READ_ONLY_TOOLS = [
-  "Read",
-  "Grep",
-  "Glob",
-  "Bash(git diff *)",
-  "Bash(git log *)",
-  "Bash(git show *)",
-];
+const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
 
 // ---------------------------------------------------------------------------
 // Tools
@@ -150,7 +141,7 @@ server.registerTool(
   {
     title: "Ask Claude",
     description:
-      "Ask Claude Code a question or give it a task. Claude will use its full toolset (file reading, code search, web search, etc.) to answer.",
+      "Ask Opus for a creative direction or grounded analysis. Each call is isolated; available tools are Read, Grep, Glob, or none when allowedTools=[].",
     inputSchema: {
       prompt: z.string().describe("The question or task for Claude"),
       workingDirectory: z
@@ -176,7 +167,6 @@ server.registerTool(
       model,
       maxTurns,
       allowedTools,
-      sessionId: lastSessionId ?? undefined,
       progress,
     });
     return formatClaudeResponse(parsed);
@@ -210,7 +200,6 @@ server.registerTool(
       workingDirectory,
       maxTurns,
       allowedTools: READ_ONLY_TOOLS,
-      sessionId: lastSessionId ?? undefined,
       progress,
     });
     return formatClaudeResponse(parsed);
@@ -241,7 +230,6 @@ server.registerTool(
       workingDirectory,
       maxTurns,
       allowedTools: READ_ONLY_TOOLS,
-      sessionId: lastSessionId ?? undefined,
       progress,
     });
     return formatClaudeResponse(parsed);
@@ -275,7 +263,6 @@ server.registerTool(
       workingDirectory,
       maxTurns,
       allowedTools: READ_ONLY_TOOLS,
-      sessionId: lastSessionId ?? undefined,
       progress,
     });
     return formatClaudeResponse(parsed);
@@ -307,7 +294,6 @@ server.registerTool(
       workingDirectory,
       maxTurns,
       allowedTools: READ_ONLY_TOOLS,
-      sessionId: lastSessionId ?? undefined,
       progress,
     });
     return formatClaudeResponse(parsed);
@@ -333,7 +319,7 @@ server.registerTool(
       workingDirectory,
       model,
       maxTurns,
-      sessionId: lastSessionId ?? undefined,
+      implement: true,
       progress,
     });
     return formatClaudeResponse(parsed);

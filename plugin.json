@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "claude-personal-agents",
+  "version": "0.4.0-personal.1",
+  "description": "Persistent Claude collaboration with automatic Codex task context.",
+  "repository": "https://github.com/2937015922/claude-codex-bridge",
+  "license": "MIT",
+  "extensions": { "com.openai": { "hooks": "./hooks/hooks.json" } }
+}

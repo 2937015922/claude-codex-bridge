@@ -13,6 +13,7 @@ export interface ExecOptions {
   env?: Record<string, string>;
   timeoutMs?: number;
   maxRetries?: number;
+  input?: string;
   onStdout?: (chunk: Buffer | string) => void;
   onStderr?: (chunk: Buffer | string) => void;
 }

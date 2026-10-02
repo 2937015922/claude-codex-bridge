@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
+import { fileURLToPath } from "node:url";
 import { execCommand } from "../src/lib/exec-runner.js";
 
-const CLI_PATH = new URL("../src/cli.ts", import.meta.url).pathname;
+const CLI_PATH = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
 
 function runCli(args: string[]) {
   return execCommand({
-    command: "npx",
-    args: ["tsx", CLI_PATH, ...args],
+    command: process.execPath,
+    args: [CLI_PATH, ...args],
     timeoutMs: 5000,
   });
 }
@@ -29,8 +30,8 @@ describe("cli", () => {
 
   it("starts codex server on 'serve codex'", async () => {
     const result = await runCli(["serve", "codex"]);
-    // The server starts on stdio and blocks waiting for input,
-    // so it will be killed by timeout. Check that it started successfully.
+    // The server starts on stdio. With ignored stdin it may exit on EOF;
+    // otherwise the execution timeout stops it after the startup message.
     expect(result.stderr).toContain("codex-bridge MCP server started");
   });
 

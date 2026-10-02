@@ -1,36 +1,28 @@
-name: Release
+name: Personal package
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  release:
-    permissions:
-      id-token: write
-      contents: write
-
+  package:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
-          registry-url: https://registry.npmjs.org/
-
-      - run: npx changelogithub
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
-      - run: pnpm i
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: pnpm build
-
-      - run: pnpm publish --no-git-checks --access public
-        env:
-          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+      - run: pnpm exec vitest run
+      - run: npm pack --ignore-scripts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: personal-bridge
+          path: '*.tgz'

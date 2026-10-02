@@ -1,5 +1,7 @@
 # claude-codex-bridge
 
+**个人版 0.4.0-personal.1**：自动父上下文、持续 Opus 会话、统一任务接口与本地后台。安装、验证和当前限制见 [PERSONAL.md](./PERSONAL.md)。新插件使用 `claude_personal`；下面保留上游兼容命令的介绍。此 fork 未发布到下方 npm 包，直接安装该 npm 包仍会得到上游版本。
+
 [![npm version](https://img.shields.io/npm/v/claude-codex-bridge?color=f97316)](https://www.npmjs.com/package/claude-codex-bridge)
 [![npm downloads](https://img.shields.io/npm/dm/claude-codex-bridge?color=3b82f6)](https://www.npmjs.com/package/claude-codex-bridge)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)

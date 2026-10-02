@@ -1,11 +1,28 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execCommand, isTransientError } from "../src/lib/exec-runner.js";
+
+const fixture = fileURLToPath(new URL("./fixtures/exec-process.mjs", import.meta.url));
+const temporaryDirectories: string[] = [];
+async function temporaryDirectory() {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-exec-test-"));
+  temporaryDirectories.push(directory);
+  return realpath(directory);
+}
+afterEach(async () => {
+  for (const directory of temporaryDirectories.splice(0)) {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 describe("execCommand", () => {
   it("captures stdout from a simple command", async () => {
     const result = await execCommand({
-      command: "echo",
-      args: ["hello world"],
+      command: process.execPath,
+      args: [fixture, "stdout", "hello world"],
     });
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trim()).toBe("hello world");
@@ -14,16 +31,16 @@ describe("execCommand", () => {
 
   it("captures stderr", async () => {
     const result = await execCommand({
-      command: "sh",
-      args: ["-c", "echo error >&2"],
+      command: process.execPath,
+      args: [fixture, "stderr", "error"],
     });
     expect(result.stderr.trim()).toBe("error");
   });
 
   it("reports non-zero exit code", async () => {
     const result = await execCommand({
-      command: "sh",
-      args: ["-c", "exit 42"],
+      command: process.execPath,
+      args: [fixture, "exit", "42"],
     });
     expect(result.exitCode).toBe(42);
     expect(result.timedOut).toBe(false);
@@ -31,8 +48,8 @@ describe("execCommand", () => {
 
   it("times out and kills long-running process", async () => {
     const result = await execCommand({
-      command: "sleep",
-      args: ["60"],
+      command: process.execPath,
+      args: [fixture, "sleep", "60000"],
       timeoutMs: 200,
     });
     expect(result.timedOut).toBe(true);
@@ -48,19 +65,19 @@ describe("execCommand", () => {
   });
 
   it("respects cwd option", async () => {
+    const cwd = await temporaryDirectory();
     const result = await execCommand({
-      command: "pwd",
-      args: [],
-      cwd: "/tmp",
+      command: process.execPath,
+      args: [fixture, "cwd"],
+      cwd,
     });
-    // macOS resolves /tmp to /private/tmp
-    expect(result.stdout.trim()).toMatch(/\/tmp$/);
+    expect(result.stdout.trim()).toBe(cwd);
   });
 
   it("passes custom env vars", async () => {
     const result = await execCommand({
-      command: "sh",
-      args: ["-c", "echo $TEST_VAR"],
+      command: process.execPath,
+      args: [fixture, "env", "TEST_VAR"],
       env: { TEST_VAR: "bridge_test" },
     });
     expect(result.stdout.trim()).toBe("bridge_test");
@@ -68,12 +85,23 @@ describe("execCommand", () => {
 
   it("increments BRIDGE_DEPTH in child env", async () => {
     const result = await execCommand({
-      command: "sh",
-      args: ["-c", "echo $BRIDGE_DEPTH"],
+      command: process.execPath,
+      args: [fixture, "env", "BRIDGE_DEPTH"],
     });
     // Current depth is 0 (or whatever test env has), child should be +1
     const depth = parseInt(result.stdout.trim(), 10);
     expect(depth).toBeGreaterThanOrEqual(1);
+  });
+
+  it("passes Unicode and option-like input through stdin literally", async () => {
+    const input = "--中文任务\n--help && $(literal) `unchanged`\n";
+    const result = await execCommand({
+      command: process.execPath,
+      args: [fixture, "stdin"],
+      input,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(input);
   });
 });
 
@@ -144,53 +172,49 @@ describe("isTransientError", () => {
 
 describe("retry behavior", () => {
   it("retries on transient error and succeeds", async () => {
-    // Use a counter file to make the script fail on first call, succeed on second
-    const counterFile = `/tmp/bridge-retry-test-${Date.now()}`;
+    const counterFile = join(await temporaryDirectory(), "attempts");
     const result = await execCommand({
-      command: "sh",
-      args: [
-        "-c",
-        `if [ ! -f "${counterFile}" ]; then echo 1 > "${counterFile}"; echo "503 service unavailable" >&2; exit 1; else rm -f "${counterFile}"; echo "success"; fi`,
-      ],
+      command: process.execPath,
+      args: [fixture, "attempt", counterFile, "503 service unavailable", "2"],
       maxRetries: 2,
     });
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trim()).toBe("success");
+    expect(await readFile(counterFile, "utf8")).toBe("2");
   });
 
   it("does not retry non-transient errors", async () => {
-    const counterFile = `/tmp/bridge-no-retry-test-${Date.now()}`;
+    const counterFile = join(await temporaryDirectory(), "attempts");
     const result = await execCommand({
-      command: "sh",
-      args: [
-        "-c",
-        `if [ ! -f "${counterFile}" ]; then echo 1 > "${counterFile}"; echo "invalid argument" >&2; exit 1; else rm -f "${counterFile}"; echo "should not reach"; fi`,
-      ],
+      command: process.execPath,
+      args: [fixture, "attempt", counterFile, "invalid argument", "2"],
       maxRetries: 2,
     });
-    // Should NOT have retried — counter file still exists
     expect(result.exitCode).toBe(1);
     expect(result.stderr.trim()).toBe("invalid argument");
-    // Clean up
-    await execCommand({ command: "rm", args: ["-f", counterFile], maxRetries: 0 });
+    expect(await readFile(counterFile, "utf8")).toBe("1");
   });
 
   it("respects maxRetries: 0 to disable retry", async () => {
+    const counterFile = join(await temporaryDirectory(), "attempts");
     const result = await execCommand({
-      command: "sh",
-      args: ["-c", 'echo "rate limit" >&2; exit 1'],
+      command: process.execPath,
+      args: [fixture, "attempt", counterFile, "rate limit", "99"],
       maxRetries: 0,
     });
     expect(result.exitCode).toBe(1);
+    expect(await readFile(counterFile, "utf8")).toBe("1");
   });
 
   it("gives up after exhausting retries", async () => {
+    const counterFile = join(await temporaryDirectory(), "attempts");
     const result = await execCommand({
-      command: "sh",
-      args: ["-c", 'echo "connection refused" >&2; exit 1'],
+      command: process.execPath,
+      args: [fixture, "attempt", counterFile, "connection refused", "99"],
       maxRetries: 1,
     });
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("connection refused");
+    expect(await readFile(counterFile, "utf8")).toBe("2");
   });
 });

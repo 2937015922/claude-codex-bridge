@@ -2,13 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/personal-subagents]
   pull_request:
     branches: [main]
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -20,5 +23,6 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
       - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm exec vitest run

@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "claude_personal": { "command": "node", "args": ["${PLUGIN_ROOT}/dist/personal-server.mjs"] }
+  }
+}

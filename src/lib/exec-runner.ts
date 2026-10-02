@@ -93,7 +93,7 @@ function execOnce(options: ExecOptions): Promise<ExecResult> {
 
   return new Promise((resolve, reject) => {
     logger.debug(
-      `exec: ${options.command} ${options.args.join(" ")} (cwd: ${options.cwd ?? process.cwd()}, timeout: ${timeoutMs}ms)`,
+      `exec: ${options.command} (${options.args.length} arguments, timeout: ${timeoutMs}ms)`,
     );
 
     let child;
@@ -101,7 +101,9 @@ function execOnce(options: ExecOptions): Promise<ExecResult> {
       child = spawn(options.command, options.args, {
         cwd: options.cwd ?? process.cwd(),
         env,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+        shell: false,
+        windowsHide: true,
       });
     } catch (err) {
       reject(
@@ -118,13 +120,20 @@ function execOnce(options: ExecOptions): Promise<ExecResult> {
     let timedOut = false;
     let settled = false;
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    if (options.input !== undefined) {
+      child.stdin?.on("error", () => {
+        /* Child exit is reported through close/error. */
+      });
+      child.stdin?.end(options.input, "utf8");
+    }
+
+    child.stdout?.on("data", (chunk: Buffer) => {
       stdoutChunks.push(chunk);
       if (typeof options.onStdout === "function") {
         options.onStdout(chunk);
       }
     });
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr?.on("data", (chunk: Buffer) => {
       stderrChunks.push(chunk);
       if (typeof options.onStderr === "function") {
         options.onStderr(chunk);
