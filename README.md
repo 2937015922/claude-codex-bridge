@@ -1,6 +1,8 @@
 # claude-codex-bridge
 
-**个人版 0.4.0-personal.1**：自动父上下文、持续 Opus 会话、统一任务接口与本地后台。安装、验证和当前限制见 [PERSONAL.md](./PERSONAL.md)。新插件使用 `claude_personal`；下面保留上游兼容命令的介绍。此 fork 未发布到下方 npm 包，直接安装该 npm 包仍会得到上游版本。
+**个人版 0.5.0-native.1**：通过本机 Responses 网关，将 `claude-opus` 接入 Codex 原生子 agent。父上下文 fork、工具、追问和等待由 Codex 管理；GPT 保留现有 ChatGPT 订阅认证，Claude 使用官方 CLI 的既有订阅登录，只做模型推理。安装、回滚、验证及当前限制见 [PERSONAL.md](./PERSONAL.md)。
+
+当前个人方案不激活 bridge MCP、上下文 hook 或独立会话后台，尚未声称生产上下文已完整无缝。下面保留上游 bridge 的历史说明，其中 npm 安装命令不是本个人版的安装入口；此 fork 不发布到下方 npm 包。
 
 [![npm version](https://img.shields.io/npm/v/claude-codex-bridge?color=f97316)](https://www.npmjs.com/package/claude-codex-bridge)
 [![npm downloads](https://img.shields.io/npm/dm/claude-codex-bridge?color=3b82f6)](https://www.npmjs.com/package/claude-codex-bridge)

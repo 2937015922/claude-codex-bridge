@@ -9,9 +9,12 @@ export default defineConfig({
     "src/personal-daemon.ts",
     "src/personal-control.ts",
     "src/personal/context-hook.ts",
+    "src/native-gateway.ts",
   ],
   format: "esm",
   dts: true,
   clean: true,
   publint: true,
+  noExternal: ["ajv"],
+  inlineOnly: false,
 });
